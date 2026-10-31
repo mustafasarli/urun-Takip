@@ -13,17 +13,23 @@ const CATEGORIES = [
 const UNITS = [
   { id: 10, unitCode: 'ADT', unitName: 'Adet', status: true },
   { id: 11, unitCode: 'KG', unitName: 'Kilogram', status: true },
+  { id: 12, unitCode: 'KOLİ', unitName: 'Koli', status: true },
+  { id: 13, unitCode: 'PLT', unitName: 'Palet', status: true },
 ];
 const PRODUCTS = [
   {
     id: 100, productCode: 'GI-0002', productName: 'Zeytinyağı 1 lt', barcode: '8690000000001',
     categoryId: 1, categoryName: 'Gıda', unitId: 10, unitCode: 'ADT', unitName: 'Adet',
     minStockLevel: 1250.5, description: 'Sızma',
+    vatRate: 1, lastPurchasePrice: 1234.5, profitMargin: 12.5,
+    units: [{ id: 1, unitId: 12, unitCode: 'KOLİ', unitName: 'Koli', multiplier: 12, barcode: '8690000000099' }],
   },
   {
     id: 101, productCode: 'GI-0001', productName: 'Deterjan', barcode: null,
     categoryId: 2, categoryName: 'Temizlik', unitId: 11, unitCode: 'KG', unitName: 'Kilogram',
     minStockLevel: null, description: null,
+    vatRate: 20, lastPurchasePrice: null, profitMargin: null,
+    units: [],
   },
 ];
 const NEXT_CODES = { 1: 'GI-0003', 2: 'TE-0001' };
@@ -63,12 +69,16 @@ async function openProductPage() {
 const dataRows = () => screen.getAllByRole('row').slice(1);
 const codeField = () => screen.getByLabelText('Ürün Kodu');
 
-async function choose(label, option) {
-  fireEvent.mouseDown(screen.getByRole('combobox', { name: label }));
+async function choose(label, option, container = document.body) {
+  fireEvent.mouseDown(within(container).getByRole('combobox', { name: label }));
   fireEvent.click(await screen.findByRole('option', { name: option }));
+  // Menü kapanınca (portal DOM'dan kalkınca) devam edilir
+  await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument());
 }
 
-test('ürünler listelenir; fiyat ve KDV alanları ekranda yer almaz', async () => {
+const unitRow = (n) => screen.getByRole('group', { name: `${n}. ek birim` });
+
+test('ürünler listelenir; KDV, son alış ve kâr oranı Türkçe biçimde gösterilir', async () => {
   await openProductPage();
 
   expect(screen.getByRole('heading', { name: 'Ürün Tanımları' })).toBeInTheDocument();
@@ -80,13 +90,15 @@ test('ürünler listelenir; fiyat ve KDV alanları ekranda yer almaz', async () 
   expect(zeytinyagi).toHaveTextContent('ADT');
   expect(zeytinyagi).toHaveTextContent('1.250,5'); // Türkçe sayı biçimi
   expect(zeytinyagi).toHaveTextContent('Sızma');
+  expect(zeytinyagi).toHaveTextContent('%1');
+  expect(zeytinyagi).toHaveTextContent('1.234,50 ₺');
+  expect(zeytinyagi).toHaveTextContent('%12,5');
+  expect(dataRows()[0]).toHaveTextContent('%20');
+  expect(zeytinyagi).toHaveTextContent('KOLİ ×12');
 
-  // Barkod, minimum stok ve açıklama boş
-  expect(within(dataRows()[0]).getAllByText('—')).toHaveLength(3);
+  // Ek birim, barkod, son alış, kâr oranı, minimum stok ve açıklama boş
+  expect(within(dataRows()[0]).getAllByText('—')).toHaveLength(6);
   expect(screen.getByText(/Toplam:/)).toHaveTextContent('Toplam: 2 kayıt');
-
-  expect(screen.queryByText(/Fiyat/)).not.toBeInTheDocument();
-  expect(screen.queryByText(/KDV/)).not.toBeInTheDocument();
 });
 
 test('Min. Stok sayısal sıralanır, boşlar sonda kalır', async () => {
@@ -134,12 +146,28 @@ test('Ekle: zorunlu alanlar kontrol edilir; POST isteğinde ürün kodu gönderi
   expect(screen.getByText('Ürün adı boş olamaz')).toBeInTheDocument();
   expect(screen.getByText('Kategori seçilmelidir')).toBeInTheDocument();
   expect(screen.getByText('Birim seçilmelidir')).toBeInTheDocument();
+  expect(screen.getByText('KDV oranı boş olamaz')).toBeInTheDocument();
   expect(global.fetch).not.toHaveBeenCalledWith(`${BASE}/products`, expect.objectContaining({ method: 'POST' }));
 
   fireEvent.change(screen.getByLabelText(/Ürün Adı/), { target: { value: 'Pirinç' } });
   await choose(/Kategori/, 'Gıda (GI)');
-  await choose(/Birim/, 'KG - Kilogram');
+  await choose(/Temel Birim/, 'KG - Kilogram');
   fireEvent.change(screen.getByLabelText(/Minimum Stok/), { target: { value: '12.5' } });
+
+  // Ek birim: Palet = 480 Kilogram
+  fireEvent.click(screen.getByRole('button', { name: 'Birim Ekle' }));
+  await choose(/Birim/, 'PLT - Palet', unitRow(1));
+  fireEvent.change(within(unitRow(1)).getByLabelText(/Çarpan/), { target: { value: '480' } });
+  expect(unitRow(1)).toHaveTextContent('1 Palet = 480 Kilogram');
+
+  // KDV 100'ü geçemez
+  fireEvent.change(screen.getByLabelText(/KDV Oranı/), { target: { value: '120' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Ekle' }));
+  expect(screen.getByText("KDV oranı 100'den büyük olamaz")).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText(/KDV Oranı/), { target: { value: '10' } });
+  fireEvent.change(screen.getByLabelText(/Son Alış Fiyatı/), { target: { value: '45.90' } });
+  fireEvent.change(screen.getByLabelText(/Kâr Oranı/), { target: { value: '25' } });
   fireEvent.click(screen.getByRole('button', { name: 'Ekle' }));
 
   expect(await screen.findByText('Ürün başarıyla oluşturuldu')).toBeInTheDocument();
@@ -151,7 +179,14 @@ test('Ekle: zorunlu alanlar kontrol edilir; POST isteğinde ürün kodu gönderi
     categoryId: 1,
     unitId: 11,
     minStockLevel: 12.5,
+    vatRate: 10,
+    lastPurchasePrice: 45.9,
+    profitMargin: 25,
+    units: [{ unitId: 13, multiplier: 480, barcode: null }],
   });
+
+  // Kayıttan sonra form ve ek birim satırları temizlenir
+  await waitFor(() => expect(screen.queryByRole('group', { name: '1. ek birim' })).not.toBeInTheDocument());
 });
 
 test('Düzenle: mevcut ürün kodu gösterilir ve değiştirilemez; PUT isteği gider', async () => {
@@ -163,11 +198,21 @@ test('Düzenle: mevcut ürün kodu gösterilir ve değiştirilemez; PUT isteği 
   expect(codeField()).toHaveAttribute('readonly');
   expect(screen.getByText('Ürün kodu değiştirilemez')).toBeInTheDocument();
   expect(screen.getByRole('combobox', { name: /Kategori/ })).toHaveTextContent('Gıda (GI)');
-  expect(screen.getByRole('combobox', { name: /Birim/ })).toHaveTextContent('ADT - Adet');
+  expect(screen.getByRole('combobox', { name: /Temel Birim/ })).toHaveTextContent('ADT - Adet');
+  // Kayıtlı ek birim satırı dolu gelir
+  expect(within(unitRow(1)).getByRole('combobox', { name: /Birim/ })).toHaveTextContent('KOLİ - Koli');
+  expect(within(unitRow(1)).getByLabelText(/Çarpan/)).toHaveValue(12);
+  expect(within(unitRow(1)).getByLabelText(/Barkod/)).toHaveValue('8690000000099');
+  expect(unitRow(1)).toHaveTextContent('1 Koli = 12 Adet');
   // Düzenlemede kod ön izlemesi istenmez
   expect(global.fetch).not.toHaveBeenCalledWith(expect.stringContaining('next-code'), expect.anything());
 
+  expect(screen.getByLabelText(/KDV Oranı/)).toHaveValue(1);
+  expect(screen.getByLabelText(/Son Alış Fiyatı/)).toHaveValue(1234.5);
+  expect(screen.getByLabelText(/Kâr Oranı/)).toHaveValue(12.5);
+
   fireEvent.change(screen.getByLabelText(/Minimum Stok/), { target: { value: '30' } });
+  fireEvent.change(screen.getByLabelText(/Kâr Oranı/), { target: { value: '15' } });
   fireEvent.click(screen.getByRole('button', { name: 'Güncelle' }));
 
   expect(await screen.findByText('Ürün güncellendi')).toBeInTheDocument();
@@ -180,7 +225,56 @@ test('Düzenle: mevcut ürün kodu gösterilir ve değiştirilemez; PUT isteği 
     categoryId: 1,
     unitId: 10,
     minStockLevel: 30,
+    vatRate: 1,
+    lastPurchasePrice: 1234.5,
+    profitMargin: 15,
+    units: [{ unitId: 12, multiplier: 12, barcode: '8690000000099' }],
   });
+});
+
+test('Ek birimler: temel birim listede çıkmaz, çarpan 1 olamaz, satır kaldırılabilir', async () => {
+  await openProductPage();
+  await choose(/Temel Birim/, 'ADT - Adet');
+
+  fireEvent.click(screen.getByRole('button', { name: 'Birim Ekle' }));
+  fireEvent.mouseDown(within(unitRow(1)).getByRole('combobox', { name: /Birim/ }));
+  const options = (await screen.findAllByRole('option')).map((o) => o.textContent);
+  expect(options).not.toContain('ADT - Adet');
+  fireEvent.click(screen.getByRole('option', { name: 'KOLİ - Koli' }));
+  await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument());
+
+  // İkinci satırda birinci satırda seçilen birim de çıkmaz
+  fireEvent.click(screen.getByRole('button', { name: 'Birim Ekle' }));
+  fireEvent.mouseDown(within(unitRow(2)).getByRole('combobox', { name: /Birim/ }));
+  const options2 = (await screen.findAllByRole('option')).map((o) => o.textContent);
+  expect(options2).not.toContain('KOLİ - Koli');
+  expect(options2).not.toContain('ADT - Adet');
+  fireEvent.keyDown(screen.getByRole('listbox'), { key: 'Escape' });
+  await waitFor(() => expect(screen.queryByRole('listbox')).not.toBeInTheDocument());
+
+  fireEvent.change(within(unitRow(1)).getByLabelText(/Çarpan/), { target: { value: '1' } });
+  fireEvent.change(screen.getByLabelText(/Ürün Adı/), { target: { value: 'Su' } });
+  await choose(/Kategori/, 'Gıda (GI)');
+  fireEvent.change(screen.getByLabelText(/KDV Oranı/), { target: { value: '20' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Ekle' }));
+
+  expect(within(unitRow(1)).getByText('Çarpan 1 olamaz')).toBeInTheDocument();
+  expect(within(unitRow(2)).getByText('Birim seçilmelidir')).toBeInTheDocument();
+  expect(global.fetch).not.toHaveBeenCalledWith(`${BASE}/products`, expect.objectContaining({ method: 'POST' }));
+
+  // Boş satır kaldırılır
+  fireEvent.click(within(unitRow(2)).getByRole('button', { name: 'Birimi kaldır' }));
+  expect(screen.queryByRole('group', { name: '2. ek birim' })).not.toBeInTheDocument();
+});
+
+test('Düzenlemede temel birim değişirse uyarı gösterilir', async () => {
+  await openProductPage();
+  fireEvent.click(screen.getAllByRole('button', { name: 'Düzenle' })[1]); // GI-0002, temel birim Adet + Koli ×12
+
+  expect(screen.queryByText(/Temel birim değişti/)).not.toBeInTheDocument();
+  await choose(/Temel Birim/, 'KG - Kilogram');
+  expect(screen.getByText(/Temel birim değişti/)).toHaveTextContent('Kilogram');
+  expect(unitRow(1)).toHaveTextContent('1 Koli = 12 Kilogram');
 });
 
 test('Sil: onay penceresi açılır; "Evet, Sil" ile PATCH isteği gider', async () => {

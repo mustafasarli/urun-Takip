@@ -21,6 +21,11 @@ const headSx = { fontWeight: 600, color: 'text.secondary', fontSize: 12, whiteSp
 const PAGE_SIZES = [10, 25, 50];
 
 const quantity = new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 3 });
+const money = new Intl.NumberFormat('tr-TR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const percentNumber = new Intl.NumberFormat('tr-TR', { maximumFractionDigits: 2 });
+// Türkçede yüzde işareti sayıdan önce yazılır: %20, %12,5
+const percent = { format: (n) => `%${percentNumber.format(n)}` };
+const currency = { format: (n) => `${money.format(n)} ₺` };
 
 // Sayısal sütunlar sağa yaslı ve Türkçe biçimde (1.234,5) gösterilir
 const COLUMNS = [
@@ -28,7 +33,27 @@ const COLUMNS = [
   { key: 'productName', label: 'Ürün Adı' },
   { key: 'categoryName', label: 'Kategori' },
   { key: 'unitCode', label: 'Birim', render: (p) => p.unitCode, tooltip: (p) => p.unitName },
+  {
+    key: 'units',
+    label: 'Birimler',
+    sortable: false,
+    // Örn. "Koli ×12, Pl ×480"; üzerine gelince "1 Koli = 12 Adet" satırları
+    render: (p) =>
+      p.units?.length ? p.units.map((u) => `${u.unitCode} ×${quantity.format(u.multiplier)}`).join(', ') : null,
+    tooltip: (p) => (
+      <>
+        {p.units.map((u) => (
+          <div key={u.unitId}>
+            1 {u.unitName} = {quantity.format(u.multiplier)} {p.unitName}
+          </div>
+        ))}
+      </>
+    ),
+  },
   { key: 'barcode', label: 'Barkod' },
+  { key: 'vatRate', label: 'KDV', numeric: true, format: percent },
+  { key: 'lastPurchasePrice', label: 'Son Alış', numeric: true, format: currency },
+  { key: 'profitMargin', label: 'Kâr Oranı', numeric: true, format: percent },
   { key: 'minStockLevel', label: 'Min. Stok', numeric: true, format: quantity },
   { key: 'description', label: 'Açıklama' },
 ];
@@ -129,13 +154,17 @@ function ProductList({ products, loading, editingId, deletingId, onEdit, onDelet
                   align={col.numeric ? 'right' : 'left'}
                   sortDirection={orderBy === col.key ? order : false}
                 >
-                  <TableSortLabel
-                    active={orderBy === col.key}
-                    direction={orderBy === col.key ? order : 'asc'}
-                    onClick={() => handleSort(col.key)}
-                  >
-                    {col.label}
-                  </TableSortLabel>
+                  {col.sortable === false ? (
+                    col.label
+                  ) : (
+                    <TableSortLabel
+                      active={orderBy === col.key}
+                      direction={orderBy === col.key ? order : 'asc'}
+                      onClick={() => handleSort(col.key)}
+                    >
+                      {col.label}
+                    </TableSortLabel>
+                  )}
                 </TableCell>
               ))}
               <TableCell sx={headSx} align="right">

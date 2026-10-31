@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import InputAdornment from '@mui/material/InputAdornment';
 import MenuItem from '@mui/material/MenuItem';
 import Paper from '@mui/material/Paper';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 import { getNextProductCode } from '../../api/productApi';
+import ProductUnitsEditor from './ProductUnitsEditor';
 
 // Ürün kodu formda tutulmaz: kategorinin kısa adından backend'de otomatik üretilir
 const EMPTY = {
@@ -14,6 +16,9 @@ const EMPTY = {
   categoryId: '',
   unitId: '',
   minStockLevel: '',
+  vatRate: '',
+  lastPurchasePrice: '',
+  profitMargin: '',
   description: '',
 };
 
@@ -28,9 +33,23 @@ function fromProduct(p) {
     categoryId: p.categoryId ?? '',
     unitId: p.unitId ?? '',
     minStockLevel: toText(p.minStockLevel),
+    vatRate: toText(p.vatRate),
+    lastPurchasePrice: toText(p.lastPurchasePrice),
+    profitMargin: toText(p.profitMargin),
     description: p.description ?? '',
   };
 }
+
+// En fazla 2 ondalık basamak (fiyat ve yüzdeler için)
+const TWO_DECIMALS = /^\d+(\.\d{1,2})?$/;
+// Çarpan: en fazla 3 ondalık (örn. 0,5 Kg)
+const THREE_DECIMALS = /^\d+(\.\d{1,3})?$/;
+
+const unitLabel = (code, name) => `${code} - ${name}`;
+
+const adornment = (text, position = 'start') => ({
+  [`${position}Adornment`]: <InputAdornment position={position}>{text}</InputAdornment>,
+});
 
 // Düzenlenen ürünün kategorisi/birimi sonradan pasife alınmışsa seçim listesinde yine görünsün
 function withCurrent(options, id, label) {
@@ -49,11 +68,23 @@ const gridSx = {
 // Ekleme ve güncelleme için ortak form. `product` verilirse düzenleme modundadır.
 function ProductForm({ product, categories, units, onSubmit, onCancel, onRefresh, saving, refreshing, fieldErrors }) {
   const [form, setForm] = useState(EMPTY);
+  const [extraUnits, setExtraUnits] = useState([]); // [{ key, unitId, multiplier, barcode }]
   const [localErrors, setLocalErrors] = useState({});
+  const nextKey = useRef(0);
+
+  const newRow = (u = {}) => ({
+    key: nextKey.current++,
+    unitId: u.unitId ?? '',
+    multiplier: toText(u.multiplier),
+    barcode: u.barcode ?? '',
+  });
 
   useEffect(() => {
     setForm(product ? fromProduct(product) : EMPTY);
+    setExtraUnits((product?.units ?? []).map(newRow));
     setLocalErrors({});
+    // newRow yalnızca ref kullanır; ürün değişince satırlar yeniden kurulur
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [product]);
 
   const errors = { ...fieldErrors, ...localErrors };
@@ -91,11 +122,35 @@ function ProductForm({ product, categories, units, onSubmit, onCancel, onRefresh
     product?.categoryId,
     product?.categoryName
   );
-  const unitOptions = withCurrent(
-    units.map((u) => ({ id: u.id, label: `${u.unitCode} - ${u.unitName}` })),
-    product?.unitId,
-    product && `${product.unitCode} - ${product.unitName}`
-  );
+  // Aktif birimler + düzenlenen üründe kullanılan ama sonradan pasife alınmış birimler
+  const unitOptions = units.map((u) => ({
+    id: u.id,
+    unitCode: u.unitCode,
+    unitName: u.unitName,
+    label: unitLabel(u.unitCode, u.unitName),
+  }));
+  if (product) {
+    [{ unitId: product.unitId, unitCode: product.unitCode, unitName: product.unitName }, ...(product.units ?? [])]
+      .filter((pu) => !unitOptions.some((o) => o.id === pu.unitId))
+      .forEach((pu) =>
+        unitOptions.push({
+          id: pu.unitId,
+          unitCode: pu.unitCode,
+          unitName: pu.unitName,
+          label: `${unitLabel(pu.unitCode, pu.unitName)} (pasif)`,
+          inactive: true,
+        })
+      );
+  }
+  const baseUnit = unitOptions.find((o) => o.id === form.unitId) ?? null;
+
+  // Satır değişince o satırlara ait eski hata mesajları temizlenir
+  const handleUnitsChange = (rows) => {
+    setExtraUnits(rows);
+    setLocalErrors((prev) =>
+      Object.fromEntries(Object.entries(prev).filter(([k]) => !k.startsWith('units[')))
+    );
+  };
 
   const handleChange = (e) => {
     const { name, value } = e.target;
@@ -113,6 +168,41 @@ function ProductForm({ product, categories, units, onSubmit, onCancel, onRefresh
     const minStock = toNumber(form.minStockLevel);
     if (minStock !== null && minStock < 0) next.minStockLevel = 'Minimum stok negatif olamaz';
 
+    const vat = toNumber(form.vatRate);
+    if (vat === null) next.vatRate = 'KDV oranı boş olamaz';
+    else if (vat < 0) next.vatRate = 'KDV oranı negatif olamaz';
+    else if (vat > 100) next.vatRate = "KDV oranı 100'den büyük olamaz";
+    else if (!TWO_DECIMALS.test(form.vatRate)) next.vatRate = 'En fazla 2 ondalık basamak girilebilir';
+
+    const price = toNumber(form.lastPurchasePrice);
+    if (price !== null && price < 0) next.lastPurchasePrice = 'Son alış fiyatı negatif olamaz';
+    else if (price !== null && !TWO_DECIMALS.test(form.lastPurchasePrice))
+      next.lastPurchasePrice = 'En fazla 2 ondalık basamak girilebilir';
+
+    const margin = toNumber(form.profitMargin);
+    if (margin !== null && margin < 0) next.profitMargin = 'Kâr oranı negatif olamaz';
+    else if (margin !== null && !TWO_DECIMALS.test(form.profitMargin))
+      next.profitMargin = 'En fazla 2 ondalık basamak girilebilir';
+
+    // Ek birimler: backend'deki kurallarla aynı
+    const productBarcode = form.barcode.trim();
+    const seenBarcodes = new Set(productBarcode ? [productBarcode] : []);
+    extraUnits.forEach((row, i) => {
+      const key = (name) => `units[${i}].${name}`;
+      if (!row.unitId) next[key('unitId')] = 'Birim seçilmelidir';
+      else if (row.unitId === form.unitId) next[key('unitId')] = 'Temel birimle aynı olamaz';
+
+      const m = toNumber(row.multiplier);
+      if (m === null) next[key('multiplier')] = 'Çarpan boş olamaz';
+      else if (!(m > 0)) next[key('multiplier')] = "Çarpan 0'dan büyük olmalıdır";
+      else if (m === 1) next[key('multiplier')] = 'Çarpan 1 olamaz';
+      else if (!THREE_DECIMALS.test(row.multiplier)) next[key('multiplier')] = 'En fazla 3 ondalık basamak girilebilir';
+
+      const bc = row.barcode.trim();
+      if (bc && seenBarcodes.has(bc)) next[key('barcode')] = 'Bu barkod bu üründe zaten kullanılıyor';
+      else if (bc) seenBarcodes.add(bc);
+    });
+
     setLocalErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -127,8 +217,19 @@ function ProductForm({ product, categories, units, onSubmit, onCancel, onRefresh
       categoryId: Number(form.categoryId),
       unitId: Number(form.unitId),
       minStockLevel: toNumber(form.minStockLevel),
+      vatRate: toNumber(form.vatRate),
+      lastPurchasePrice: toNumber(form.lastPurchasePrice),
+      profitMargin: toNumber(form.profitMargin),
+      units: extraUnits.map((r) => ({
+        unitId: Number(r.unitId),
+        multiplier: toNumber(r.multiplier),
+        barcode: r.barcode.trim() || null,
+      })),
     });
-    if (ok && !product) setForm(EMPTY);
+    if (ok && !product) {
+      setForm(EMPTY);
+      setExtraUnits([]);
+    }
   };
 
   const field = (name) => ({
@@ -177,38 +278,67 @@ function ProductForm({ product, categories, units, onSubmit, onCancel, onRefresh
             </MenuItem>
           ))}
         </TextField>
-        <TextField {...field('unitId')} select label="Birim" required fullWidth>
+        <TextField {...field('unitId')} select label="Temel Birim" required fullWidth>
           {unitOptions.length === 0 && (
             <MenuItem value="" disabled>
               Aktif birim yok
             </MenuItem>
           )}
-          {unitOptions.map((o) => (
-            <MenuItem key={o.id} value={o.id}>
-              {o.label}
-            </MenuItem>
-          ))}
+          {unitOptions
+            .filter((o) => !o.inactive || o.id === product?.unitId)
+            .map((o) => (
+              <MenuItem key={o.id} value={o.id}>
+                {o.label}
+              </MenuItem>
+            ))}
         </TextField>
+
+        <TextField {...field('vatRate')} label="KDV Oranı" type="number" required fullWidth
+          slotProps={{
+            htmlInput: { step: '0.01', min: 0, max: 100, inputMode: 'decimal' },
+            input: adornment('%'),
+          }} />
+        <TextField {...field('lastPurchasePrice')} label="Son Alış Fiyatı" type="number" fullWidth
+          helperText={errors.lastPurchasePrice || 'KDV hariç'}
+          slotProps={{
+            htmlInput: { step: '0.01', min: 0, inputMode: 'decimal' },
+            input: adornment('₺', 'end'),
+          }} />
+        <TextField {...field('profitMargin')} label="Kâr Oranı" type="number" fullWidth
+          slotProps={{
+            htmlInput: { step: '0.01', min: 0, inputMode: 'decimal' },
+            input: adornment('%'),
+          }} />
 
         <TextField {...field('minStockLevel')} label="Minimum Stok" type="number" fullWidth
           slotProps={{ htmlInput: { step: '0.001', min: 0, inputMode: 'decimal' } }} />
         <TextField {...field('description')} label="Açıklama" fullWidth
           slotProps={{ htmlInput: { maxLength: 500 } }} />
+      </Box>
 
-        {/* TextField (small) ile aynı yükseklikte: 40px */}
-        <Box sx={{ display: 'flex', gap: 1, height: 40, alignItems: 'center' }}>
-          <Button type="submit" variant="contained" disabled={saving}>
-            {saving ? 'Kaydediliyor…' : product ? 'Güncelle' : 'Ekle'}
+      <ProductUnitsEditor
+        rows={extraUnits}
+        onChange={handleUnitsChange}
+        onAdd={() => handleUnitsChange([...extraUnits, newRow()])}
+        baseUnit={baseUnit}
+        unitOptions={unitOptions.filter((o) => !o.inactive || extraUnits.some((r) => r.unitId === o.id))}
+        errors={errors}
+        saving={saving}
+        baseUnitChanged={Boolean(product) && form.unitId !== product.unitId}
+      />
+
+      <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', mt: 1 }}>
+        <Button type="submit" variant="contained" disabled={saving}>
+          {saving ? 'Kaydediliyor…' : product ? 'Güncelle' : 'Ekle'}
+        </Button>
+        {product && (
+          <Button variant="outlined" color="inherit" onClick={onCancel} disabled={saving}>
+            Vazgeç
           </Button>
-          {product && (
-            <Button variant="outlined" color="inherit" onClick={onCancel} disabled={saving}>
-              Vazgeç
-            </Button>
-          )}
-          <Button variant="outlined" onClick={onRefresh} disabled={saving || refreshing}>
-            {refreshing ? 'Yenileniyor…' : 'Yenile'}
-          </Button>
-        </Box>
+        )}
+        <Button variant="outlined" onClick={onRefresh} disabled={saving || refreshing}>
+          {refreshing ? 'Yenileniyor…' : 'Yenile'}
+        </Button>
       </Box>
     </Paper>
   );
