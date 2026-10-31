@@ -118,7 +118,7 @@ test('Açıklama başlığına göre sıralar (boşlar sonda) ve alt satırda to
     screen
       .getAllByRole('row')
       .slice(1) // başlık satırı hariç
-      .map((r) => r.querySelectorAll('td')[1].textContent);
+      .map((r) => r.querySelectorAll('td')[2].textContent); // Kategori Adı, Kısa Ad, Açıklama
 
   fireEvent.click(screen.getByRole('button', { name: /Açıklama/ }));
   expect(descriptions()).toEqual(['Bal', 'çay', 'Şişe', '—']);
@@ -173,6 +173,39 @@ test('Düzenle ve Sil ikon olarak gösterilir; üzerine gelince açıklama çık
 
   fireEvent.mouseOver(deleteBtn);
   expect(await screen.findByRole('tooltip', { name: 'Sil' })).toBeInTheDocument();
+});
+
+test('Kısa Ad: zorunludur, Türkçe büyük harfe çevrilir ve kayıtta gönderilir', async () => {
+  await openCategoryPage();
+
+  // Kısa adı olmayan eski kategori listede uyarıyla görünür
+  expect(screen.getByText('Tanımsız')).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText(/Kategori Adı/), { target: { value: 'Bitki Çayı' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Ekle' }));
+  expect(screen.getByText('Kısa ad boş olamaz')).toBeInTheDocument();
+
+  // "bi ç" -> boşluk atılır, Türkçe büyük harf: "BİÇ"
+  fireEvent.change(screen.getByLabelText(/Kısa Ad/), { target: { value: 'bi ç' } });
+  expect(screen.getByLabelText(/Kısa Ad/)).toHaveValue('BİÇ');
+  expect(screen.getByText('Ürün kodu: BİÇ-0001')).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText(/Kısa Ad/), { target: { value: 'b' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Ekle' }));
+  expect(screen.getByText('Kısa ad 2 ile 5 karakter arasında olmalıdır')).toBeInTheDocument();
+
+  fireEvent.change(screen.getByLabelText(/Kısa Ad/), { target: { value: 'bç' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Ekle' }));
+
+  await waitFor(() =>
+    expect(global.fetch).toHaveBeenCalledWith(
+      'http://localhost:8080/api/categories',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ name: 'Bitki Çayı', shortName: 'BÇ', description: null }),
+      })
+    )
+  );
 });
 
 test('menüden Tanımlar » Kategori Tanımları seçilince kategori ekranı açılır', async () => {

@@ -5,7 +5,11 @@ import Paper from '@mui/material/Paper';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
 
-const EMPTY = { name: '', description: '' };
+const EMPTY = { name: '', shortName: '', description: '' };
+
+// Kısa ad ürün kodu öneki olur (BO -> BO-0001): yalnızca harf/rakam, Türkçe kurallarıyla büyük harf (i -> İ)
+const SHORT_NAME_PATTERN = /^[\p{L}\p{N}]+$/u;
+const toShortName = (value) => value.replace(/\s/g, '').toLocaleUpperCase('tr-TR');
 
 // Ekleme ve güncelleme için ortak form. `category` verilirse düzenleme modundadır.
 function CategoryForm({ category, onSubmit, onCancel, onRefresh, saving, refreshing, fieldErrors }) {
@@ -13,7 +17,11 @@ function CategoryForm({ category, onSubmit, onCancel, onRefresh, saving, refresh
   const [localErrors, setLocalErrors] = useState({});
 
   useEffect(() => {
-    setForm(category ? { name: category.name ?? '', description: category.description ?? '' } : EMPTY);
+    setForm(
+      category
+        ? { name: category.name ?? '', shortName: category.shortName ?? '', description: category.description ?? '' }
+        : EMPTY
+    );
     setLocalErrors({});
   }, [category]);
 
@@ -21,7 +29,7 @@ function CategoryForm({ category, onSubmit, onCancel, onRefresh, saving, refresh
 
   const handleChange = (e) => {
     const { name, value } = e.target;
-    setForm((prev) => ({ ...prev, [name]: value }));
+    setForm((prev) => ({ ...prev, [name]: name === 'shortName' ? toShortName(value) : value }));
     setLocalErrors((prev) => ({ ...prev, [name]: undefined }));
   };
 
@@ -30,6 +38,12 @@ function CategoryForm({ category, onSubmit, onCancel, onRefresh, saving, refresh
     const next = {};
     if (!form.name.trim()) next.name = 'Kategori adı boş olamaz';
     else if (form.name.length > 100) next.name = 'Kategori adı en fazla 100 karakter olabilir';
+    if (!form.shortName) next.shortName = 'Kısa ad boş olamaz';
+    else if (form.shortName.length < 2 || form.shortName.length > 5) {
+      next.shortName = 'Kısa ad 2 ile 5 karakter arasında olmalıdır';
+    } else if (!SHORT_NAME_PATTERN.test(form.shortName)) {
+      next.shortName = 'Kısa ad yalnızca harf ve rakam içerebilir';
+    }
     if (form.description.length > 500) next.description = 'Açıklama en fazla 500 karakter olabilir';
     setLocalErrors(next);
     return Object.keys(next).length === 0;
@@ -38,7 +52,11 @@ function CategoryForm({ category, onSubmit, onCancel, onRefresh, saving, refresh
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (!validate()) return;
-    const ok = await onSubmit({ name: form.name.trim(), description: form.description.trim() || null });
+    const ok = await onSubmit({
+      name: form.name.trim(),
+      shortName: form.shortName,
+      description: form.description.trim() || null,
+    });
     if (ok && !category) setForm(EMPTY);
   };
 
@@ -62,6 +80,19 @@ function CategoryForm({ category, onSubmit, onCancel, onRefresh, saving, refresh
           disabled={saving}
           sx={{ width: { xs: '100%', sm: 300 } }}
           slotProps={{ htmlInput: { maxLength: 100 } }}
+        />
+        <TextField
+          id="shortName"
+          name="shortName"
+          label="Kısa Ad"
+          required
+          value={form.shortName}
+          onChange={handleChange}
+          error={Boolean(errors.shortName)}
+          helperText={errors.shortName || (form.shortName ? `Ürün kodu: ${form.shortName}-0001` : 'Örn. BO → BO-0001')}
+          disabled={saving}
+          sx={{ width: { xs: '100%', sm: 160 } }}
+          slotProps={{ htmlInput: { maxLength: 5 } }}
         />
         <TextField
           id="description"

@@ -22,6 +22,7 @@ const PAGE_SIZES = [10, 25, 50];
 
 const COLUMNS = [
   { key: 'name', label: 'Kategori Adı' },
+  { key: 'shortName', label: 'Kısa Ad' },
   { key: 'description', label: 'Açıklama' },
 ];
 
@@ -115,6 +116,15 @@ function CategoryList({ categories, loading, editingId, deletingId, onEdit, onDe
             {pageRows.map((c) => (
               <TableRow key={c.id} hover selected={c.id === editingId}>
                 <TableCell>{c.name}</TableCell>
+                <TableCell>
+                  {c.shortName || (
+                    <Tooltip title="Kısa ad tanımlı değil; bu kategoride ürün eklenemez">
+                      <Typography component="span" color="warning.main" sx={{ fontSize: 12 }}>
+                        Tanımsız
+                      </Typography>
+                    </Tooltip>
+                  )}
+                </TableCell>
                 <TableCell>
                   {c.description || (
                     <Typography component="span" color="text.disabled">
