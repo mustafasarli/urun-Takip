@@ -8,6 +8,7 @@ import '@fontsource/inter/700.css';
 import CssBaseline from '@mui/material/CssBaseline';
 import { ThemeProvider } from '@mui/material/styles';
 import App from './App';
+import { AuthProvider } from './auth/AuthContext';
 import theme from './theme';
 import reportWebVitals from './reportWebVitals';
 
@@ -16,7 +17,9 @@ root.render(
   <React.StrictMode>
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <App />
+      <AuthProvider>
+        <App />
+      </AuthProvider>
     </ThemeProvider>
   </React.StrictMode>
 );

@@ -13,10 +13,10 @@ export const SIDEBAR_WIDTH = 200;
 
 const paperSx = { '& .MuiDrawer-paper': { width: SIDEBAR_WIDTH, boxSizing: 'border-box' } };
 
-function MenuList({ activeKey, onSelect }) {
+function MenuList({ menu, activeKey, onSelect }) {
   // Seçili ekranın bulunduğu grup açık başlar
   const [openGroups, setOpenGroups] = useState(() =>
-    MENU.filter((g) => g.items.some((i) => i.key === activeKey)).map((g) => g.key)
+    menu.filter((g) => g.items.some((i) => i.key === activeKey)).map((g) => g.key)
   );
 
   const toggleGroup = (key) => {
@@ -25,7 +25,7 @@ function MenuList({ activeKey, onSelect }) {
 
   return (
     <List component="nav" aria-label="Ana menü" dense>
-      {MENU.map((group) => {
+      {menu.map((group) => {
         const open = openGroups.includes(group.key);
         return (
           <div key={group.key}>
@@ -55,8 +55,9 @@ function MenuList({ activeKey, onSelect }) {
   );
 }
 
-// Geniş ekranda sabit menü; dar ekranda üst çubuktaki butonla açılan çekmece
-function Sidebar({ activeKey, onSelect, mobileOpen, onMobileClose }) {
+// Geniş ekranda sabit menü; dar ekranda üst çubuktaki butonla açılan çekmece.
+// `menu`: kullanıcının yetkisine göre süzülmüş menü (verilmezse tümü)
+function Sidebar({ menu = MENU, activeKey, onSelect, mobileOpen, onMobileClose }) {
   const handleMobileSelect = (key) => {
     onSelect(key);
     onMobileClose();
@@ -66,7 +67,7 @@ function Sidebar({ activeKey, onSelect, mobileOpen, onMobileClose }) {
     <>
       <Drawer variant="permanent" sx={{ display: { xs: 'none', md: 'block' }, ...paperSx }}>
         <Toolbar variant="dense" />
-        <MenuList activeKey={activeKey} onSelect={onSelect} />
+        <MenuList menu={menu} activeKey={activeKey} onSelect={onSelect} />
       </Drawer>
       <Drawer
         variant="temporary"
@@ -74,7 +75,7 @@ function Sidebar({ activeKey, onSelect, mobileOpen, onMobileClose }) {
         onClose={onMobileClose}
         sx={{ display: { xs: 'block', md: 'none' }, ...paperSx }}
       >
-        <MenuList activeKey={activeKey} onSelect={handleMobileSelect} />
+        <MenuList menu={menu} activeKey={activeKey} onSelect={handleMobileSelect} />
       </Drawer>
     </>
   );

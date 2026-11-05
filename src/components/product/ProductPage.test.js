@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import App from '../../App';
+import { TestAuthProvider } from '../../auth/testAuth';
 import theme from '../../theme';
 
 const BASE = 'http://localhost:8080/api';
@@ -58,7 +59,7 @@ afterEach(() => {
 async function openProductPage() {
   render(
     <ThemeProvider theme={theme}>
-      <App />
+      <TestAuthProvider><App /></TestAuthProvider>
     </ThemeProvider>
   );
   fireEvent.click(screen.getByRole('button', { name: /Tanımlar/ }));

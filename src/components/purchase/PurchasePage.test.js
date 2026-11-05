@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import App from '../../App';
+import { TestAuthProvider } from '../../auth/testAuth';
 import theme from '../../theme';
 import { firstOfMonthIso, todayIso } from './purchaseCalc';
 
@@ -70,7 +71,7 @@ afterEach(() => {
 async function openPurchasePage() {
   render(
     <ThemeProvider theme={theme}>
-      <App />
+      <TestAuthProvider><App /></TestAuthProvider>
     </ThemeProvider>
   );
   fireEvent.click(screen.getByRole('button', { name: /Stok/ }));

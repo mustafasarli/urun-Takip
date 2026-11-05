@@ -1,13 +1,14 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import App from './App';
+import { TestAuthProvider } from './auth/testAuth';
 import theme from './theme';
 
 // Gerçek uygulamadaki gibi tema (Türkçe çeviriler, varsayılan boyutlar) ile çizer
 const renderApp = () =>
   render(
     <ThemeProvider theme={theme}>
-      <App />
+      <TestAuthProvider><App /></TestAuthProvider>
     </ThemeProvider>
   );
 

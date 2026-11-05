@@ -22,7 +22,8 @@ import Typography from '@mui/material/Typography';
 import HistoryOutlined from '@mui/icons-material/HistoryOutlined';
 import { getStocks } from '../../api/stockApi';
 import { formatQty } from '../purchase/purchaseCalc';
-import StockMovementsDialog from './StockMovementsDialog';
+import { useAuth } from '../../auth/AuthContext';
+import StockMovementsDialog, { SOURCE_PAGES, SOURCE_PERMISSIONS } from './StockMovementsDialog';
 import { stockBreakdown } from './stockFormat';
 
 const headSx = { fontWeight: 600, color: 'text.secondary', fontSize: 12, whiteSpace: 'nowrap' };
@@ -65,8 +66,10 @@ const empty = (
   </Typography>
 );
 
-// Aktif ürünlerin anlık stoğu (temel birimde). Satırdaki simgeyle ürünün hareket geçmişi açılır.
-function StockPage() {
+// Aktif ürünlerin anlık stoğu (temel birimde). Satırdaki simgeyle ürünün hareket geçmişi açılır;
+// hareketteki belge no tıklanınca ilgili alış/çıkış fişi kendi ekranında açılır (`navigate`, App'ten).
+function StockPage({ navigate }) {
+  const { hasScreen } = useAuth();
   const [stocks, setStocks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState(null);
@@ -302,7 +305,14 @@ function StockPage() {
         {body}
       </Paper>
 
-      <StockMovementsDialog stock={movementsOf} onClose={() => setMovementsOf(null)} />
+      <StockMovementsDialog
+        stock={movementsOf}
+        onClose={() => setMovementsOf(null)}
+        onOpenDocument={
+          navigate && ((m) => navigate(SOURCE_PAGES[m.sourceType], { openId: m.sourceId }))
+        }
+        canOpen={(m) => hasScreen(SOURCE_PERMISSIONS[m.sourceType])}
+      />
     </Box>
   );
 }

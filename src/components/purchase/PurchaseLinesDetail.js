@@ -14,9 +14,10 @@ const subSx = { fontSize: 11, color: 'text.secondary', mt: 0.25 };
 
 /**
  * Listede açılan fiş satırları (salt okunur). Değerler backend'in kayıtta hesapladığı tutarlardır.
- * `detail`: { loading, error, data } — data, GET /api/purchases/{id} yanıtı.
+ * `detail`: { loading, error, data } — data, GET /api/purchases/{id} yanıtı (iade fişlerinde de aynı biçim).
+ * `amountLabel`: net tutar sütununun başlığı (iadelerde "İade Tutarı").
  */
-function PurchaseLinesDetail({ documentNo, detail }) {
+function PurchaseLinesDetail({ documentNo, detail, amountLabel = 'Alış Fiyatı' }) {
   if (!detail || detail.loading) {
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, py: 1.5 }}>
@@ -56,7 +57,7 @@ function PurchaseLinesDetail({ documentNo, detail }) {
               İskonto
             </TableCell>
             <TableCell sx={headSx} align="right">
-              Alış Fiyatı
+              {amountLabel}
             </TableCell>
             <TableCell sx={headSx} align="right">
               KDV

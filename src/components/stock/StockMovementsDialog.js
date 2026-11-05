@@ -8,19 +8,37 @@ import Dialog from '@mui/material/Dialog';
 import DialogActions from '@mui/material/DialogActions';
 import DialogContent from '@mui/material/DialogContent';
 import DialogTitle from '@mui/material/DialogTitle';
+import Link from '@mui/material/Link';
 import Table from '@mui/material/Table';
 import TableBody from '@mui/material/TableBody';
 import TableCell from '@mui/material/TableCell';
 import TableContainer from '@mui/material/TableContainer';
 import TableHead from '@mui/material/TableHead';
 import TableRow from '@mui/material/TableRow';
+import Tooltip from '@mui/material/Tooltip';
 import Typography from '@mui/material/Typography';
 import { getStockMovements } from '../../api/stockApi';
 import { formatDate, formatMoney, formatQty, round } from '../purchase/purchaseCalc';
 
 const headSx = { fontWeight: 600, color: 'text.secondary', fontSize: 12, whiteSpace: 'nowrap' };
 
-const SOURCE_LABELS = { PURCHASE: 'Alış' };
+const SOURCE_LABELS = { PURCHASE: 'Alış', ISSUE: 'Çıkış', PURCHASE_RETURN: 'Alış İade', SALES_RETURN: 'Satış İade' };
+
+// Belge no'nun açtığı ekranın yetkisi (yetkisi olmayana bağlantı gösterilmez)
+export const SOURCE_PERMISSIONS = {
+  PURCHASE: 'PURCHASES',
+  ISSUE: 'ISSUES',
+  PURCHASE_RETURN: 'PURCHASE_RETURNS',
+  SALES_RETURN: 'SALES_RETURNS',
+};
+
+// Belge no tıklanınca açılacak ekran (menu.js anahtarları)
+export const SOURCE_PAGES = {
+  PURCHASE: 'purchases',
+  ISSUE: 'issues',
+  PURCHASE_RETURN: 'purchaseReturns',
+  SALES_RETURN: 'salesReturns',
+};
 
 // Hareketler yeniden eskiye gelir; bakiye eskiden yeniye yürüyen toplamdır
 function withBalance(movements) {
@@ -34,7 +52,9 @@ function withBalance(movements) {
 }
 
 // Bir ürünün stok hareket geçmişi. `stock` null ise pencere kapalıdır.
-function StockMovementsDialog({ stock, onClose }) {
+// `onOpenDocument(movement)` verilirse belge numarası tıklanabilir olur; `canOpen(movement)` false
+// dönerse (kullanıcının o fiş ekranına yetkisi yok) düz metin kalır.
+function StockMovementsDialog({ stock, onClose, onOpenDocument, canOpen = () => true }) {
   const [state, setState] = useState({ loading: false, error: null, rows: [] });
 
   useEffect(() => {
@@ -86,7 +106,22 @@ function StockMovementsDialog({ stock, onClose }) {
               <TableRow key={m.id} hover>
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>{formatDate(m.movementDate)}</TableCell>
                 <TableCell sx={{ whiteSpace: 'nowrap' }}>
-                  {m.documentNo ?? '—'}
+                  {m.documentNo && onOpenDocument && SOURCE_PAGES[m.sourceType] && canOpen(m) ? (
+                    // describeChild: ipucu açıklama olur; bağlantının adı belge no olarak kalır
+                    <Tooltip title={`${SOURCE_LABELS[m.sourceType]} fişini aç`} describeChild>
+                      <Link
+                        component="button"
+                        type="button"
+                        underline="hover"
+                        onClick={() => onOpenDocument(m)}
+                        sx={{ fontSize: 'inherit', fontWeight: 600, verticalAlign: 'baseline' }}
+                      >
+                        {m.documentNo}
+                      </Link>
+                    </Tooltip>
+                  ) : (
+                    m.documentNo ?? '—'
+                  )}
                   <Typography component="span" sx={{ fontSize: 11, color: 'text.secondary', ml: 0.75 }}>
                     {SOURCE_LABELS[m.sourceType] ?? m.sourceType}
                   </Typography>

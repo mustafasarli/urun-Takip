@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { ThemeProvider } from '@mui/material/styles';
 import App from '../../App';
+import { TestAuthProvider } from '../../auth/testAuth';
 import theme from '../../theme';
 
 const BASE = 'http://localhost:8080/api';
@@ -27,6 +28,30 @@ const MOVEMENTS = [
   { id: 1, movementDate: '2026-10-28', direction: 'IN', quantity: 10, unitCost: 11, sourceType: 'PURCHASE', sourceId: 5, documentNo: 'ALS-2026-000001' },
 ];
 
+// BO-0001: bir alış ve bir çıkış fişi
+const MIXED_MOVEMENTS = [
+  { id: 4, movementDate: '2026-11-03', direction: 'OUT', quantity: 2, unitCost: 5, sourceType: 'ISSUE', sourceId: 9, documentNo: 'CKS-2026-000001' },
+  { id: 3, movementDate: '2026-11-01', direction: 'IN', quantity: 14, unitCost: 5, sourceType: 'PURCHASE', sourceId: 6, documentNo: 'ALS-2026-000002' },
+];
+
+const docLine = (extra) => ({
+  id: 1, lineNo: 1, productId: 2, productCode: 'BO-0001', productName: 'İç Cephe Boyası',
+  unitId: 4, unitCode: 'L', unitName: 'Litre', multiplier: 1, baseUnitCode: 'L', baseUnitName: 'Litre',
+  discountRate: 0, vatRate: 20, discountAmount: 0, ...extra,
+});
+
+const ISSUE_DETAIL = {
+  id: 9, documentNo: 'CKS-2026-000001', documentDate: '2026-11-03', customerName: 'Yılmaz Market',
+  invoiceNo: null, description: null, totalDiscount: 0, totalNet: 20, totalVat: 4, grandTotal: 24,
+  lines: [docLine({ quantity: 2, baseQuantity: 2, unitPrice: 10, lineAmount: 20, netAmount: 20, vatAmount: 4, totalAmount: 24 })],
+};
+
+const PURCHASE_DETAIL = {
+  id: 6, documentNo: 'ALS-2026-000002', documentDate: '2026-09-15', supplierName: 'Akyüz',
+  invoiceNo: null, description: null, totalDiscount: 0, totalNet: 70, totalVat: 14, grandTotal: 84, locked: false,
+  lines: [docLine({ quantity: 14, baseQuantity: 14, unitPrice: 5, lineAmount: 70, netAmount: 70, vatAmount: 14, totalAmount: 84 })],
+};
+
 const json = (body, status = 200) =>
   Promise.resolve({ ok: status < 400, status, text: () => Promise.resolve(JSON.stringify(body)) });
 
@@ -34,6 +59,12 @@ beforeEach(() => {
   global.fetch = jest.fn((url) => {
     if (url === `${BASE}/stocks`) return json({ data: STOCKS });
     if (url === `${BASE}/stocks/1/movements`) return json({ data: MOVEMENTS });
+    if (url === `${BASE}/stocks/2/movements`) return json({ data: MIXED_MOVEMENTS });
+    // Belge no ile açılan fiş ekranlarının ihtiyaç duyduğu istekler
+    if (url === `${BASE}/stock-issues/9`) return json({ data: ISSUE_DETAIL });
+    if (url === `${BASE}/purchases/6`) return json({ data: PURCHASE_DETAIL });
+    if (url.startsWith(`${BASE}/stock-issues?`) || url.startsWith(`${BASE}/purchases?`)) return json({ data: [] });
+    if (url.endsWith('/customers') || url.endsWith('/suppliers') || url === `${BASE}/products`) return json({ data: [] });
     return json({}, 404);
   });
 });
@@ -45,7 +76,7 @@ afterEach(() => {
 async function openStockPage() {
   render(
     <ThemeProvider theme={theme}>
-      <App />
+      <TestAuthProvider><App /></TestAuthProvider>
     </ThemeProvider>
   );
   fireEvent.click(screen.getByRole('button', { name: /Stok/ }));
@@ -102,4 +133,38 @@ test('Hareketler penceresi: belge no, yön ve yürüyen bakiye', async () => {
 
   fireEvent.click(within(dialog).getByRole('button', { name: 'Kapat' }));
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+});
+
+async function openMixedMovements() {
+  await openStockPage();
+  fireEvent.click(within(dataRows()[0]).getByRole('button', { name: 'Hareketler' })); // BO-0001
+  const dialog = await screen.findByRole('dialog', { name: /BO-0001/ });
+  await within(dialog).findByText('CKS-2026-000001');
+  return dialog;
+}
+
+test('hareketlerde çıkış fişinin belge no’su tıklanınca Çıkış Fişi ekranında o fiş açılır', async () => {
+  const dialog = await openMixedMovements();
+  const rows = within(dialog).getAllByRole('row').slice(1);
+  expect(rows[0]).toHaveTextContent('Çıkış');
+  expect(rows[0]).toHaveTextContent('−2');
+  expect(rows[0].lastChild).toHaveTextContent('12'); // 14 − 2
+
+  fireEvent.click(within(dialog).getByRole('button', { name: 'CKS-2026-000001' }));
+
+  expect(await screen.findByRole('heading', { name: 'Çıkış Fişi CKS-2026-000001' })).toBeInTheDocument();
+  expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Çıkış Fişi', current: 'page' })).toBeInTheDocument();
+  expect(global.fetch).toHaveBeenCalledWith(`${BASE}/stock-issues/9`, expect.objectContaining({ method: 'GET' }));
+});
+
+test('alış fişinin belge no’su tıklanınca Alış Girişi açılır; eski tarihli fiş için liste filtresi genişler', async () => {
+  const dialog = await openMixedMovements();
+
+  fireEvent.click(within(dialog).getByRole('button', { name: 'ALS-2026-000002' }));
+
+  expect(await screen.findByRole('heading', { name: 'Alış Fişi ALS-2026-000002' })).toBeInTheDocument();
+  // Listeye dönünce fişin tarihi (15.09.2026) filtreye dahil olsun
+  fireEvent.click(screen.getByRole('button', { name: 'Listeye dön' }));
+  expect(await screen.findByLabelText('Başlangıç')).toHaveValue('2026-09-15');
 });

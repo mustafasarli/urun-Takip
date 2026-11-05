@@ -23,8 +23,9 @@ const FILTER_DELAY_MS = 300;
 /**
  * Alış Girişi: liste ve fiş aynı sayfada; "Yeni Alış"/"Düzenle" fiş görünümüne geçer.
  * Fiş kaydedilince stoğa işlenir (backend), sonra listeye dönülür.
+ * `params.openId` verilirse (örn. stok hareketlerinden belge no tıklanınca) o fiş doğrudan açılır.
  */
-function PurchasePage() {
+function PurchasePage({ params }) {
   const [filters, setFilters] = useState(() => ({ from: firstOfMonthIso(), to: todayIso(), supplier: '' }));
   const [purchases, setPurchases] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -71,12 +72,27 @@ function PurchasePage() {
       setProducts(prods);
       setSuppliers(sups);
       setEditor({ purchase: detail });
+      return detail;
     } catch (err) {
       setMessage({ type: 'error', text: err.message });
+      return null;
     } finally {
       setOpening(false);
     }
   };
+
+  // Başka ekrandan belge no ile gelindiyse fiş açılır. Fiş bu aydan eskiyse listeye dönünce
+  // görünsün diye filtre başlangıcı fiş tarihine çekilir.
+  const openId = params?.openId;
+  useEffect(() => {
+    if (!openId) return;
+    openEditor(openId).then((detail) => {
+      if (detail?.documentDate)
+        setFilters((f) => (detail.documentDate < f.from ? { ...f, from: detail.documentDate } : f));
+    });
+    // Yalnızca ekran açılışında; openEditor her render'da yeniden oluşur
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openId]);
 
   const closeEditor = () => {
     setEditor(null);
